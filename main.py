@@ -1,5 +1,4 @@
 import torch
-import gymnasium as gym
 from enviornments.metadrive_env import MetaDriveEnvWrapper
 from agents.dqn_agent import DQNAgent
 from agents.epsilon_scheduler import EpsilonScheduler

@@ -1,4 +1,3 @@
-from metadrive import MetaDriveEnv
 import torch
 import os
 from enviornments.metadrive_env import MetaDriveEnvWrapper  
