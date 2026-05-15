@@ -1,40 +1,66 @@
-"""
-MetaDrive Keyboard Control Script
-===================================
-Control a vehicle in MetaDrive simulator using keyboard inputs with
-progressive ramping, asymmetric release behavior, and persistent logging.
+import torch
+import gymnasium as gym
+from enviornments.metadrive_env import MetaDriveEnvWrapper
+from agents.dqn_agent import DQNAgent
+from agents.epsilon_scheduler import EpsilonScheduler
 
-Installation:
-    pip install metadrive-simulator pygame
+ENV_CONFIG = {
+        "use_render": True,
+        "manual_control": False,
+        "traffic_density": 0.1,
+        "num_scenarios": 100,
+        "start_seed": 0,
+        "map": "SSSS",
+        # "daytime": random.choice(["08:00", "12:00", "17:30", "20:00"]),
+        "accident_prob": 0.0,
+        "vehicle_config": {
+            "show_lidar": True,
+            # "vehicle_model": "default", # Neki MetaDrive verzije zahtevaju specifične modele, ostavi default ako pravi problem
+        },
+        # ISPRAVLJENI KLJUČEVI:
+        "on_continuous_line_done": True, 
+        "crash_vehicle_done": True,      # Sudar sa drugim vozilom
+        "crash_object_done": True,       # Sudar sa objektom (ogradom, čunjem)
+        "out_of_road_done": True,  
+}
 
-Controls:
-    A / D     — Steer left / right  (slow auto-center on release, decay ~0.03/frame)
-    W         — Accelerate          (slow auto-decay on release, ~0.02/frame)
-    S         — Brake / throttle cut (instant throttle → 0, stays 0 on release)
-    SPACE     — Reset steering & throttle to zero instantly
-    Q / ESC   — Quit and save log
+def main():
 
-Tunable parameters (see CONFIG in game.py):
-    STEER_STEP      = 0.05   increment per frame while key held
-    STEER_DECAY     = 0.07   subtracted per frame on release (toward 0)
-    THROTTLE_STEP   = 0.05   increment per frame while W held
-    THROTTLE_DECAY  = 0.02   subtracted per frame on W release
-    BRAKE_VALUE     = -0.3   applied while S is held (set to 0.0 to just cut throttle)
-"""
+    config = ENV_CONFIG
+    env = MetaDriveEnvWrapper(config)
 
-from datetime import datetime
-import os
+    obs, info = env.reset()
+    state_dim = env.obs_size if env.obs_size is not None else len(obs)
+    action_dim = env.num_actions()
+    epsilon_scheduler = EpsilonScheduler(start=0.0, end=0.0, decay=1, warmup_steps=0)
+    agent = DQNAgent(state_dim, action_dim, epsilon_scheduler)
 
-from utils.logger import ActionLogger
-from manual_control.game import Game
+    checkpoint_path = "checkpoints/final.pt"
+    checkpoint = torch.load(checkpoint_path, weights_only=True)
+    agent.online_net.load_state_dict(checkpoint["online_net"])
+    agent.online_net.eval()
+    done = False
+    total_reward = 0
+    global_step = 0
 
-from utils.env_randomizer import get_random_metadrive_config
-from manual_control.game import CONFIG
-from collect_dataset import run_dataset_collection
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+    while not done:
 
+        with torch.no_grad():
 
-if __name__ == '__main__' :
-    run_dataset_collection()
+            action = agent.select_action(
+                obs, global_step, training=False
+            )
+
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        total_reward += reward
+
+        if done:
+            print(f"Voznja zavrsena! Uspesnost: {info.get('arrive_dest', False)}")
+            print(f"Ukupna nagrada: {total_reward}")
+            break
+
+    env.close()
+
+if __name__ == "__main__":
+    main()
